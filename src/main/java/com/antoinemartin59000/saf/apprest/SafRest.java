@@ -53,6 +53,8 @@ public class SafRest extends SafApp {
 
             config.routes.exception(Exception.class, (e, ctx) -> {
                 e.printStackTrace();
+
+                ctx.status(500);
             });
 
             config.bundledPlugins.enableCors(corsPluginConfigConsumer -> {
