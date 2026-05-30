@@ -13,19 +13,13 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.IntFunction;
 
 import javax.sql.DataSource;
 
-import org.reflections.Reflections;
-import org.reflections.util.ClasspathHelper;
-import org.reflections.util.ConfigurationBuilder;
-
 import com.antoinemartin59000.saf.common.Pair;
-import com.antoinemartin59000.saf.entity.Inflector;
 import com.antoinemartin59000.saf.entity.ReflectionUtils;
 import com.antoinemartin59000.saf.entity.SafEntity;
 import com.antoinemartin59000.saf.entity.SafEntitySearch;
@@ -37,208 +31,91 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 
 import io.javalin.json.JavalinJackson;
 
-public class EntityResource {
-
-    private static final Map<String, Class<? extends SafEntity>> safEntityClassesByName = new HashMap<>();
-    private static final Map<String /* entityName */, Map<String, BiConsumer<Object /* builder */, Pair<String, String>>>> biConsumersByIntervalParametersByEntity = new HashMap<>();
-    private static final Map<String /* entityName */, Map<String, BiConsumer<Object /* builder */, List<String>>>> biConsumersByStandardParametersByEntity = new HashMap<>();
-
-    static {
-        try {
-
-            Reflections reflections = new Reflections(new ConfigurationBuilder()
-                    .setUrls(ClasspathHelper.forPackage(""))
-                    .setExpandSuperTypes(false) // faster, we only care about direct subclasses
-            );
-
-            Set<Class<? extends SafEntity>> safEntityClasses = reflections.getSubTypesOf(SafEntity.class);
-
-            for (Class<? extends SafEntity> safEntityClass : safEntityClasses) {
-                try {
-                    String entityName = safEntityClass.getSimpleName();
-
-                    safEntityClassesByName.put(entityName, safEntityClass);
-                    Class<?> searchClass = Class.forName(safEntityClass.getName() + "Search");
-                    Class<?> searchBuilderClass = searchClass.getDeclaredClasses()[0];
-
-                    Map<String, BiConsumer<Object /* builder */, Pair<String, String>>> biConsumersByIntervalListParameters = generateBiConsumersByIntervalParameters(searchBuilderClass);
-                    biConsumersByIntervalParametersByEntity.put(entityName, biConsumersByIntervalListParameters);
-
-                    Map<String, BiConsumer<Object /* builder */, List<String>>> biConsumersByStandardListParameters = generateBiConsumersByStandardParameters(searchBuilderClass);
-                    biConsumersByStandardParametersByEntity.put(entityName, biConsumersByStandardListParameters);
-
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
+public class SafEntityResource<E extends SafEntity, S extends SafEntitySearch> {
 
     private final DataSource dataSource;
-    private final ISafEntityServiceProvider iSafEntityServiceProvider;
     private final JavalinJackson javalinJackson;
 
-    public EntityResource(DataSource dataSource, ISafEntityServiceProvider iSafEntityServiceProvider, JavalinJackson javalinJackson) {
+    private final Class<E> safEntityClass;
+    private final Class<S> safEntitySearch;
+    private final Map<String, BiConsumer<Object /* builder */, Pair<String, String>>> biConsumersByIntervalParameters;
+    private final Map<String, BiConsumer<Object /* builder */, List<String>>> biConsumersByStandardParameters;
+    private final SafEntityService<E, S> safEntityService;
+
+    public SafEntityResource(Class<E> safEntityClass, Class<S> safEntitySearch, DataSource dataSource, ISafEntityServiceProvider iSafEntityServiceProvider, JavalinJackson javalinJackson) {
         this.dataSource = dataSource;
-        this.iSafEntityServiceProvider = iSafEntityServiceProvider;
         this.javalinJackson = javalinJackson;
-    }
 
-    private static class ResourceNotFoundException extends Exception {
+        this.safEntityClass = safEntityClass;
+        this.safEntitySearch = safEntitySearch;
 
-    }
+        Class<?> searchBuilderClass = safEntitySearch.getDeclaredClasses()[0];
+        this.biConsumersByIntervalParameters = generateBiConsumersByIntervalParameters(searchBuilderClass);
+        this.biConsumersByStandardParameters = generateBiConsumersByStandardParameters(searchBuilderClass);
 
-    private SafEntityService<? extends SafEntity, ? extends SafEntitySearch> getService(String resourceName) throws ResourceNotFoundException {
-        String entityName = toCamelCaseSingular(resourceName);
+        String serviceGetterMethodName = "get" + safEntityClass.getSimpleName() + "Service";
         try {
-            Method getter = iSafEntityServiceProvider.getClass().getMethod("get" + entityName + "Service");
-            return (SafEntityService<? extends SafEntity, ? extends SafEntitySearch>) getter.invoke(iSafEntityServiceProvider);
+            Method getter = iSafEntityServiceProvider.getClass().getMethod(serviceGetterMethodName);
+            safEntityService = (SafEntityService<E, S>) getter.invoke(iSafEntityServiceProvider);
         } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
-            throw new ResourceNotFoundException();
+            throw new RuntimeException(iSafEntityServiceProvider.getClass().getSimpleName() + " does not have method " + serviceGetterMethodName);
         }
     }
 
-    public Response get(String token, String resourceName, String dataSource, Long id) {
+    public E get(String token, String resourceName, String dataSource, Long id) throws SafRestException {
 
         Map<String, List<String>> queryParams = new HashMap<>();
         queryParams.put("id", Arrays.asList(String.valueOf(id)));
 
-        Response response = get(token, resourceName, queryParams, dataSource);
-
-        if (response.status() != 200) {
-            return response;
-        }
-
-        List<?> result = (List<?>) response.body();
+        List<E> result = get(token, resourceName, queryParams, dataSource);
 
         if (result.isEmpty()) {
-            ResourceUtil.Error error = new ResourceUtil.Error();
-            error.setMessage("entity not found with id " + id);
-            return new Response(404, error, null);
+            throw new SafRestException(404, "entity not found with id " + id);
         }
 
-        return new Response(200, result.get(0), null);
+        return result.get(0);
     }
 
-    public Response get(String token, String resourceName, String dataSource, Map<String, List<String>> queryParameters) {
-
-        try {
-
-            Map<String, List<String>> interpretedQueryParameters = new HashMap<>();
-            for (Map.Entry<String, List<String>> entity : queryParameters.entrySet()) {
-                String key = entity.getKey();
-                interpretedQueryParameters.putIfAbsent(key, new ArrayList<>());
-
-                for (String value : entity.getValue()) {
-                    if (entity.getKey().endsWith("-id") && !value.isEmpty() && !Character.isDigit(value.charAt(0))) {
-                        Response response = resolveIdsFromSubQuery(token, value, dataSource);
-
-                        if (response.status() != 200) {
-                            return response;
-                        }
-
-                        List<SafEntity> entities = (List<SafEntity>) response.body();
-                        entities.stream()
-                                .map(SafEntity::getId)
-                                .map(String::valueOf)
-                                .forEach(idStr -> interpretedQueryParameters.get(key).add(idStr));
-                    } else {
-                        interpretedQueryParameters.get(entity.getKey()).add(value);
-                    }
-                }
-            }
-
-            return get(token, resourceName, interpretedQueryParameters, dataSource);
-        } catch (Exception e) {
-            return ResourceUtil.logServerErrorAndMakeResponse(resourceName, queryParameters, e);
-        }
-    }
-
-    private Response resolveIdsFromSubQuery(String token, String subQuery, String datasource) {
-
-        if (!subQuery.contains("?")) {
-            throw new RuntimeException("server error");
-        }
-
-        String[] resourceAndParam = subQuery.split("\\?", 2); // TODO check if 2 is required
-        String resource = resourceAndParam[0];
-        String[] params = resourceAndParam[1].split("&");
-
-        Map<String, List<String>> multiValuedParams = new HashMap<>();
-        for (String param : params) {
-            String[] paramSplit = param.split("=", 2);
-            String name = paramSplit[0];
-            String value = paramSplit[1];
-
-            multiValuedParams.putIfAbsent(name, new ArrayList<>());
-            multiValuedParams.get(name).add(value);
-        }
-
-        return get(token, resource, multiValuedParams, datasource);
-    }
-
-    public Response post(String token, String resourceName, String json) {
+    public Long post(String token, String resourceName, String json) throws SafRestException {
 
         try (SafServiceSession serviceSession = ResourceUtil.generateServiceSession(dataSource, token)) {
-            String entityName = toCamelCaseSingular(resourceName);
-            SafEntityService service = getService(resourceName);
 
-            Class<? extends SafEntity> safEntityClass = safEntityClassesByName.get(entityName);
+            E entity = (E) javalinJackson.getMapper().readValue(json, safEntityClass);
+            Long insertedId = safEntityService.insert(serviceSession, entity);
 
-            SafEntity entity = (SafEntity) javalinJackson.getMapper().readValue(json, safEntityClass);
-            Long insertedId = service.insert(serviceSession, entity);
-
-            // FIXME get absolute path
-            // URI location = uriInfo.getAbsolutePathBuilder().path(String.valueOf(insertedId)).build();
-            String location = resourceName + "/" + insertedId;
-
-            return new Response(201, null, Map.of("location", location));
-        } catch (ResourceNotFoundException e) {
-            ResourceUtil.Error error = new ResourceUtil.Error();
-            error.setMessage("No resource named " + resourceName);
-            return new Response(404, error, null);
+            return insertedId;
         } catch (SafServiceException e) {
-            return ResourceUtil.serviceExceptionToResponse(e);
-        } catch (InvalidTokenException e1) {
-            ResourceUtil.Error error = new ResourceUtil.Error();
-            error.setMessage("Invalid Token.");
-            return new Response(401, error, null);
+            throw ResourceUtil.serviceExceptionToResponse(e);
+        } catch (InvalidTokenException e) {
+            throw new SafRestException(401, "Invalid Token.");
         } catch (IllegalArgumentException | SecurityException | JsonProcessingException e) {
-            return ResourceUtil.logServerErrorAndMakeResponse("POST " + resourceName, Map.of(), e);
+            throw ResourceUtil.logServerErrorAndMakeResponse("POST " + resourceName, Map.of(), e);
         }
     }
 
-    public Response patch(String token, String resourceName, long id, String json) {
-
-        String entityName = toCamelCaseSingular(resourceName);
+    public void patch(String token, String resourceName, long id, String json) throws SafRestException {
 
         try (SafServiceSession serviceSession = ResourceUtil.generateServiceSession(dataSource, token)) {
 
-            SafEntityService service = getService(resourceName);
-
-            Class<? extends SafEntity> safEntityClass = safEntityClassesByName.get(entityName);
-            Class<?> searchClass = Class.forName(safEntityClass.getName() + "Search");
-            Object searchBuilder = searchClass.getMethod("builder").invoke(null);
-            biConsumersByStandardParametersByEntity.get(entityName).get("id").accept(searchBuilder, List.of(String.valueOf(id)));
-            SafEntitySearch search = (SafEntitySearch) searchBuilder.getClass().getMethod("build").invoke(searchBuilder);
+            Object searchBuilder = safEntitySearch.getMethod("builder").invoke(null);
+            biConsumersByStandardParameters.get("id").accept(searchBuilder, List.of(String.valueOf(id)));
+            S search = (S) searchBuilder.getClass().getMethod("build").invoke(searchBuilder);
 
             // FIXME? a bit hacky, we have to open a transaction to indicate we are the code and not the player
             serviceSession.openTransaction(false);
 
-            List<?> searchResult;
+            List<E> searchResult;
             try {
-                searchResult = service.searchFromDb(serviceSession, search);
+                searchResult = safEntityService.searchFromDb(serviceSession, search);
             } finally {
                 serviceSession.closeTransaction();
             }
 
             if (searchResult.isEmpty()) {
-                return new Response(404, "entity not found with id " + id, null);
+                throw new SafRestException(404, "entity not found with id " + id);
             }
 
-            Object entity = searchResult.get(0);
+            E entity = searchResult.get(0);
 
             //
 
@@ -246,73 +123,48 @@ public class EntityResource {
             try {
                 entityFromBody = javalinJackson.getMapper().readValue(json, safEntityClass);
             } catch (JsonProcessingException e) {
-                return ResourceUtil.logServerErrorAndMakeResponse("PATCH " + resourceName + "/" + id, Map.of(), e);
+                throw ResourceUtil.logServerErrorAndMakeResponse("PATCH " + resourceName + "/" + id, Map.of(), e);
             }
 
             copyPropertiesIfInJson(entity, entityFromBody, json);
 
-            service.update(serviceSession, (SafEntity) entity);
+            safEntityService.update(serviceSession, entity);
 
-            return new Response(204, null, null);
-        } catch (ResourceNotFoundException e) {
-            ResourceUtil.Error error = new ResourceUtil.Error();
-            error.setMessage("No resource named " + resourceName);
-            return new Response(404, error, null);
         } catch (SafServiceException e) {
-            return ResourceUtil.serviceExceptionToResponse(e);
+            throw ResourceUtil.serviceExceptionToResponse(e);
         } catch (InvalidTokenException e) {
             ResourceUtil.Error error = new ResourceUtil.Error();
             error.setMessage("Invalid Token");
-            return new Response(401, error, null);
-        } catch (ClassNotFoundException | NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
-            return ResourceUtil.logServerErrorAndMakeResponse("PATCH " + resourceName + "/" + id, Map.of(), e);
+            throw new SafRestException(401, "Invalid Token");
+        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+            throw ResourceUtil.logServerErrorAndMakeResponse("PATCH " + resourceName + "/" + id, Map.of(), e);
         }
     }
 
-    public Response delete(String token, String resourceName, long id) {
+    public void delete(String token, String resourceName, long id) throws SafRestException {
 
         try (SafServiceSession serviceSession = ResourceUtil.generateServiceSession(dataSource, token)) {
-            SafEntityService service = getService(resourceName);
 
             try {
-                service.delete(serviceSession, id);
+                safEntityService.delete(serviceSession, id);
             } catch (SafServiceException e) {
-                return ResourceUtil.serviceExceptionToResponse(e);
+                throw ResourceUtil.serviceExceptionToResponse(e);
             }
 
-            return new Response(204, null, null);
-        } catch (ResourceNotFoundException e) {
-            ResourceUtil.Error error = new ResourceUtil.Error();
-            error.setMessage("No resource named " + resourceName);
-            return new Response(404, error, null);
         } catch (InvalidTokenException e1) {
-            ResourceUtil.Error error = new ResourceUtil.Error();
-            error.setMessage("Invalid Token");
-            return new Response(401, error, null);
+            throw new SafRestException(401, "Invalid Token");
         } catch (SecurityException | IllegalArgumentException e) {
-            return ResourceUtil.logServerErrorAndMakeResponse("DELETE" + resourceName + "/" + id, Map.of(), e);
+            throw ResourceUtil.logServerErrorAndMakeResponse("DELETE" + resourceName + "/" + id, Map.of(), e);
         }
     }
 
-    public Response get(String token, String resourceName, Map<String, List<String>> queryParams, String dataSourceQueryParam) {
+    public List<E> get(String token, String resourceName, Map<String, List<String>> queryParams, String dataSourceQueryParam) throws SafRestException {
         try (SafServiceSession serviceSession = ResourceUtil.generateServiceSession(dataSource, token)) {
 
-            // Convert path param to class prefix (e.g., "conventional-entity" → "ConventionalEntity")
-            String entityName = toCamelCaseSingular(resourceName);
-
-            Map<String, BiConsumer<Object /* builder */, Pair<String, String>>> biConsumersByIntervalListParameters = biConsumersByIntervalParametersByEntity.get(entityName);
-
-            Map<String, BiConsumer<Object /* builder */, List<String>>> biConsumersByStandardListParameters = biConsumersByStandardParametersByEntity.get(entityName);
-
-            if (biConsumersByStandardListParameters == null) {
-                System.out.println();
-            }
-
-            Class<? extends SafEntity> safEntityClass = safEntityClassesByName.get(entityName);
             Class<?> searchClass = Class.forName(safEntityClass.getName() + "Search");
             Object searchBuilder = searchClass.getMethod("builder").invoke(null);
 
-            for (Map.Entry<String, BiConsumer<Object /* builder */, Pair<String, String>>> entry : biConsumersByIntervalListParameters.entrySet()) {
+            for (Map.Entry<String, BiConsumer<Object /* builder */, Pair<String, String>>> entry : biConsumersByIntervalParameters.entrySet()) {
                 String intervalParameterName = entry.getKey();
                 BiConsumer<Object /* builder */, Pair<String, String>> biConsumer = entry.getValue();
 
@@ -338,38 +190,35 @@ public class EntityResource {
                 String paramName = entry.getKey();
                 List<String> values = entry.getValue();
 
-                if (biConsumersByIntervalListParameters.containsKey(paramName.replaceFirst("min-", "").replaceFirst("max-", ""))) {
+                if (biConsumersByIntervalParameters.containsKey(paramName.replaceFirst("min-", "").replaceFirst("max-", ""))) {
                     // already dealt in previous loop
                     continue;
                 }
 
-                if (!biConsumersByStandardListParameters.containsKey(paramName)) {
-                    ResourceUtil.Error error = new ResourceUtil.Error();
-                    error.setMessage("invalid query parameter for resource " + resourceName + ": " + paramName);
-                    return new Response(400, error, null);
+                if (!biConsumersByStandardParameters.containsKey(paramName)) {
+                    throw new SafRestException(400, "invalid query parameter for resource " + resourceName + ": " + paramName);
                 }
 
-                BiConsumer<Object, List<String>> biConsumer = biConsumersByStandardListParameters.get(paramName);
+                BiConsumer<Object, List<String>> biConsumer = biConsumersByStandardParameters.get(paramName);
                 biConsumer.accept(searchBuilder, values);
             }
 
-            SafEntitySearch search = (SafEntitySearch) searchBuilder.getClass().getMethod("build").invoke(searchBuilder);
-            SafEntityService service = getService(resourceName);
+            S search = (S) searchBuilder.getClass().getMethod("build").invoke(searchBuilder);
 
-            List result;
+            List<E> result;
             if ("database".equals(dataSourceQueryParam)) {
-                result = service.searchFromDb(serviceSession, search);
+                result = safEntityService.searchFromDb(serviceSession, search);
             } else {
-                result = service.searchFromCache(serviceSession, search);
+                result = safEntityService.searchFromCache(serviceSession, search);
             }
 
-            return new Response(200, result, null);
+            return result;
+        } catch (SafRestException e) {
+            throw e;
         } catch (InvalidTokenException e1) {
-            ResourceUtil.Error error = new ResourceUtil.Error();
-            error.setMessage("Invalid Token.");
-            return new Response(401, error, null);
-        } catch (Exception e) {
-            return ResourceUtil.logServerErrorAndMakeResponse(resourceName, queryParams, e);
+            throw new SafRestException(401, "Invalid Token.");
+        } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException | NoSuchMethodException | SecurityException | SafServiceException | ClassNotFoundException e) {
+            throw ResourceUtil.logServerErrorAndMakeResponse(resourceName, queryParams, e);
         }
     }
 
@@ -533,19 +382,6 @@ public class EntityResource {
         return kebab;
     }
 
-    private static String toCamelCaseSingular(String kebabCase) {
-        String[] parts = kebabCase.split("-");
-        StringBuilder sb = new StringBuilder();
-
-        for (String part : parts) {
-            String singular = Inflector.getInstance().singularize(part);
-            sb.append(Character.toUpperCase(singular.charAt(0)))
-                    .append(singular.substring(1));
-        }
-
-        return sb.toString();
-    }
-
     private static Pair<OffsetDateTime, OffsetDateTime> makeInterval(OffsetDateTime nullableMinDate, OffsetDateTime nullableMaxDate) {
         if (nullableMinDate != null && nullableMaxDate != null) {
             return Pair.of(nullableMinDate, nullableMaxDate);
@@ -558,7 +394,7 @@ public class EntityResource {
         }
     }
 
-    public static void copyPropertiesIfInJson(Object target, Object source, String json) {
+    private static void copyPropertiesIfInJson(Object target, Object source, String json) {
         if (target == null || source == null) {
             throw new IllegalArgumentException("Neither target nor source can be null");
         }
@@ -589,7 +425,7 @@ public class EntityResource {
                     setter.invoke(target, value);
                 }
             } catch (Exception e) {
-                e.printStackTrace(); // FIXME
+                throw new RuntimeException("TODO");
             }
 
         }
