@@ -74,7 +74,40 @@ public class ResourceUtil {
 
     }
 
-    public static Response serviceExceptionToResponse(SafServiceException serviceException) {
+    public static Response serviceExceptionToResponseOld(SafServiceException serviceException) {
+        int httpStatus;
+
+        switch (serviceException.getResultStatus()) {
+            case OK:
+                httpStatus = 200;
+                break;
+            case ERROR:
+                httpStatus = 400;
+                break;
+            case UNAUTHORIZED:
+                httpStatus = 401;
+                break;
+            case NOT_FOUND:
+                httpStatus = 404;
+                break;
+            case DEPENDENCY_CONFLICT, DUPLICATION_CONFLICT:
+                httpStatus = 409;
+                break;
+            case INTERNAL_ERROR:
+                httpStatus = 500;
+                break;
+            case FORBIDDEN:
+                httpStatus = 403;
+                break;
+            default:
+                httpStatus = 500;
+        }
+        Error error = new Error();
+        error.setMessage(serviceException.getErrorMessage());
+        return new Response(httpStatus, error, null);
+    }
+
+    public static SafRestException serviceExceptionToResponse(SafServiceException serviceException) {
         int httpStatus;
 
         switch (serviceException.getResultStatus()) {
@@ -103,19 +136,14 @@ public class ResourceUtil {
                 httpStatus = 500;
         }
 
-        Error error = new Error();
-        error.setMessage(serviceException.getErrorMessage());
-
-        return new Response(httpStatus, error, null);
+        return new SafRestException(httpStatus, serviceException.getErrorMessage());
     }
 
-    public static Response logServerErrorAndMakeResponse(String path, Map<String, List<String>> queryParams, Exception e) {
+    public static SafRestException logServerErrorAndMakeResponse(String path, Map<String, List<String>> queryParams, Exception e) throws SafRestException {
         System.out.println("Error on request " + path);
         System.out.println("query params:" + queryParams);
         e.printStackTrace();
-        Error error = new Error();
-        error.setMessage("Server error.");
-        return new Response(500, error, null);
+        return new SafRestException(500, "Server error.");
     }
 
 }
