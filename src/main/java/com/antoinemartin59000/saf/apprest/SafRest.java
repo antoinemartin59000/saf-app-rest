@@ -9,11 +9,8 @@ import java.util.Set;
 
 import javax.sql.DataSource;
 
-import org.reflections.Reflections;
-import org.reflections.util.ClasspathHelper;
-import org.reflections.util.ConfigurationBuilder;
-
 import com.antoinemartin59000.saf.app.SafApp;
+import com.antoinemartin59000.saf.common.SubClassCollector;
 import com.antoinemartin59000.saf.entity.Inflector;
 import com.antoinemartin59000.saf.entity.SafEntity;
 import com.antoinemartin59000.saf.entityservice.ISafEntityServiceProvider;
@@ -54,14 +51,9 @@ public class SafRest extends SafApp {
         jsonMapper.getMapper().registerModule(new JavaTimeModule());
         jsonMapper.getMapper().disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
-        Reflections reflections = new Reflections(new ConfigurationBuilder()
-                .setUrls(ClasspathHelper.forPackage(""))
-                .setExpandSuperTypes(false) // faster, we only care about direct subclasses
-        );
-
         Map<String, SafEntityResource> safEntityResourcesByResourceName = new HashMap<>();
 
-        Set<Class<? extends SafEntity>> safEntityClasses = reflections.getSubTypesOf(SafEntity.class);
+        Set<Class<? extends SafEntity>> safEntityClasses = SubClassCollector.findAllSubclasses(SafEntity.class);
         for (Class<? extends SafEntity> safEntityClass : safEntityClasses) {
 
             Class<?> safEntitySearch;
