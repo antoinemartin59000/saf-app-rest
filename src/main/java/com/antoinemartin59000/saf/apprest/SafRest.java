@@ -21,7 +21,6 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import io.javalin.Javalin;
-import io.javalin.http.Context;
 import io.javalin.http.Handler;
 import io.javalin.json.JavalinJackson;
 
@@ -82,9 +81,8 @@ public class SafRest extends SafApp {
             config.routes.exception(SafRestException.class, (e, ctx) -> {
                 ResourceUtil.Error error = new ResourceUtil.Error();
                 error.setMessage(e.getMessage());
-                Response response = new Response(e.getCode(), error, null);
-
-                populateContext(response, ctx);
+                ctx.json(error);
+                ctx.status(e.getCode());
             });
 
             config.routes.exception(Exception.class, (e, ctx) -> {
@@ -253,42 +251,6 @@ public class SafRest extends SafApp {
         }
 
         return entityResource;
-    }
-
-    private void populateContext(Response response, Context ctx) {
-
-        if (response.body() != null) {
-            ctx.json(response.body());
-        }
-        ctx.status(response.status());
-
-        if (response.headers() != null) {
-            for (Map.Entry<String, String> entry : response.headers().entrySet()) {
-                ctx.header(entry.getKey(), entry.getValue());
-            }
-        }
-
-    }
-
-    private <I, O> Handler generateJavalinHandler(OverridingGetOneHandler<O> overridingHandler) {
-        return ctx -> {
-
-            String token = ctx.header("X-TOKEN");
-
-            SafServiceSession serviceSession = null; // TODO
-
-            Map<String, List<String>> queryParameters = ctx.queryParamMap();
-            O output;
-            try {
-                output = overridingHandler.handle(serviceSession, queryParameters);
-            } catch (SafServiceException e) {
-                throw ResourceUtil.serviceExceptionToResponse(e);
-            }
-
-            ctx.json(output);
-            ctx.status(200);
-
-        };
     }
 
     private <I, O> Handler generateJavalinHandler(OverridingPostHandler<I> overridingPostHandler) {
