@@ -310,7 +310,7 @@ public class SafRest extends SafApp {
             ctx.header("location", location);
             if (overridingPostHandler.playerIdForToken() != null) {
                 long playerId;
-                try (SafServiceSession serviceSession = ResourceUtil.generateServiceSession(dataSource, token)) {
+                try (SafServiceSession serviceSession = new SafServiceSession(dataSource, ServiceSessionInitiatorType.PROCESS, null)) {
                     playerId = overridingPostHandler.playerIdForToken().getMemberId(serviceSession, insertedId);
                 } catch (SafServiceException e) {
                     throw ResourceUtil.serviceExceptionToResponse(e);
@@ -320,7 +320,7 @@ public class SafRest extends SafApp {
                 ctx.header("X-TOKEN", newToken);
             } else if (overridingPostHandler.adminIdForToken() != null) {
                 long adminId;
-                try (SafServiceSession serviceSession = ResourceUtil.generateServiceSession(dataSource, token)) {
+                try (SafServiceSession serviceSession = new SafServiceSession(dataSource, ServiceSessionInitiatorType.PROCESS, null)) {
                     adminId = overridingPostHandler.adminIdForToken().getMemberId(serviceSession, insertedId);
                 } catch (SafServiceException e) {
                     throw ResourceUtil.serviceExceptionToResponse(e);
