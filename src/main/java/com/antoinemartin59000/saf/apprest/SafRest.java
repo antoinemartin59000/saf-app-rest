@@ -14,6 +14,9 @@ import com.antoinemartin59000.saf.common.SubClassCollector;
 import com.antoinemartin59000.saf.entity.Inflector;
 import com.antoinemartin59000.saf.entity.SafEntity;
 import com.antoinemartin59000.saf.entityservice.ISafEntityServiceProvider;
+import com.antoinemartin59000.saf.entityservice.SafServiceSession;
+import com.antoinemartin59000.saf.entityservice.SafServiceSession.ServiceSessionInitiatorType;
+import com.antoinemartin59000.saf.entityservice.serviceexception.SafServiceException;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
@@ -26,7 +29,7 @@ public class SafRest extends SafApp {
 
     private final DataSource dataSource;
     private final ISafEntityServiceProvider iSafEntityServiceProvider;
-    private final List<RequestHandler<?>> overridenHandlers = new ArrayList<>();
+    private final List<OverridingPostHandler<?>> overridingPostHandlers = new ArrayList<>();
     private final List<AfterHandler> afterHandlers = new ArrayList<>();
 
     public SafRest(int statusSocketPort, DataSource dataSource, ISafEntityServiceProvider iSafEntityServiceProvider) throws SQLException {
@@ -36,8 +39,8 @@ public class SafRest extends SafApp {
         this.addStatusFieldForDataSource(dataSource);
     }
 
-    public void overrideHandler(RequestHandler<?> overridenHandlers) {
-        this.overridenHandlers.add(overridenHandlers);
+    public void overridePostHandler(OverridingPostHandler<?> overridingPostHandler) {
+        this.overridingPostHandlers.add(overridingPostHandler);
     }
 
     public void addAfterHandler(AfterHandler afterHandler) {
@@ -99,26 +102,11 @@ public class SafRest extends SafApp {
 
             config.routes.get("/api", ctx -> ctx.result("Hello World!"));
 
-            for (RequestHandler<?> requestHandler : overridenHandlers) {
-                HttpMethod httpMethod = requestHandler.httpMethod();
-                String resource = requestHandler.resource();
+            for (OverridingPostHandler<?> overridingHandler : overridingPostHandlers) {
+                Handler javalinHandler = generateJavalinHandler(overridingHandler);
 
-                Handler javalinHandler = generateJavalinHandler(requestHandler);
-
-                String uri = "/api/" + resource;
-
-                if (httpMethod == HttpMethod.DELETE) {
-                    config.routes.delete(uri, javalinHandler);
-                } else if (httpMethod == HttpMethod.GET) {
-                    config.routes.get(uri, javalinHandler);
-                } else if (httpMethod == HttpMethod.PATCH) {
-                    config.routes.patch(uri, javalinHandler);
-                } else if (httpMethod == HttpMethod.POST) {
-                    config.routes.post(uri, javalinHandler);
-                } else if (httpMethod == HttpMethod.PUT) {
-                    config.routes.put(uri, javalinHandler);
-                }
-
+                String resource = "/api/" + overridingHandler.getResource();
+                config.routes.post(resource, javalinHandler);
             }
 
             config.routes.get("/api/{resource}", ctx -> {
@@ -167,7 +155,6 @@ public class SafRest extends SafApp {
                         }
                     }
                 }
-
 
                 SafEntityResource entityResource = getResource(safEntityResourcesByResourceName, resource);
                 List result = entityResource.get(token, resource, interpretedQueryParameters, dataSource);
@@ -268,23 +255,6 @@ public class SafRest extends SafApp {
         return entityResource;
     }
 
-    private <T> Handler generateJavalinHandler(RequestHandler<T> requestHandler) {
-        return ctx -> {
-
-            T bodyReques = null;
-
-            if (requestHandler.expectedBodyClass() != Void.class) {
-                bodyReques = ctx.bodyAsClass(requestHandler.expectedBodyClass());
-            }
-
-            String token = ctx.header("X-TOKEN");
-
-            Request<T> request = new Request<T>(token, bodyReques, ctx.pathParamMap());
-            Response response = requestHandler.f().apply(request);
-            populateContext(response, ctx);
-        };
-    }
-
     private void populateContext(Response response, Context ctx) {
 
         if (response.body() != null) {
@@ -298,6 +268,68 @@ public class SafRest extends SafApp {
             }
         }
 
+    }
+
+    private <I, O> Handler generateJavalinHandler(OverridingGetOneHandler<O> overridingHandler) {
+        return ctx -> {
+
+            String token = ctx.header("X-TOKEN");
+
+            SafServiceSession serviceSession = null; // TODO
+
+            Map<String, List<String>> queryParameters = ctx.queryParamMap();
+            O output;
+            try {
+                output = overridingHandler.handle(serviceSession, queryParameters);
+            } catch (SafServiceException e) {
+                throw ResourceUtil.serviceExceptionToResponse(e);
+            }
+
+            ctx.json(output);
+            ctx.status(200);
+
+        };
+    }
+
+    private <I, O> Handler generateJavalinHandler(OverridingPostHandler<I> overridingPostHandler) {
+        return ctx -> {
+
+            String token = ctx.header("X-TOKEN");
+
+            I input = ctx.bodyAsClass(overridingPostHandler.getInputClass());
+            long insertedId;
+            try (SafServiceSession serviceSession = ResourceUtil.generateServiceSession(dataSource, token)) {
+                insertedId = overridingPostHandler.handle(serviceSession, input);
+            } catch (SafServiceException e) {
+                throw ResourceUtil.serviceExceptionToResponse(e);
+            }
+
+            String location = overridingPostHandler.getResource() + "/" + insertedId;
+
+            ctx.status(201);
+            ctx.header("location", location);
+            if (overridingPostHandler.playerIdForToken() != null) {
+                long playerId;
+                try (SafServiceSession serviceSession = ResourceUtil.generateServiceSession(dataSource, token)) {
+                    playerId = overridingPostHandler.playerIdForToken().getMemberId(serviceSession, insertedId);
+                } catch (SafServiceException e) {
+                    throw ResourceUtil.serviceExceptionToResponse(e);
+                }
+
+                String newToken = ResourceUtil.generateToken(ServiceSessionInitiatorType.PLAYER, playerId); // FIXME
+                ctx.header("X-TOKEN", newToken);
+            } else if (overridingPostHandler.adminIdForToken() != null) {
+                long adminId;
+                try (SafServiceSession serviceSession = ResourceUtil.generateServiceSession(dataSource, token)) {
+                    adminId = overridingPostHandler.adminIdForToken().getMemberId(serviceSession, insertedId);
+                } catch (SafServiceException e) {
+                    throw ResourceUtil.serviceExceptionToResponse(e);
+                }
+
+                String newToken = ResourceUtil.generateToken(ServiceSessionInitiatorType.ADMINISTRATOR, adminId);
+                ctx.header("X-TOKEN", newToken);
+            }
+        };
     }
 
     @Override
