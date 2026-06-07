@@ -74,39 +74,6 @@ public class ResourceUtil {
 
     }
 
-    public static Response serviceExceptionToResponseOld(SafServiceException serviceException) {
-        int httpStatus;
-
-        switch (serviceException.getResultStatus()) {
-            case OK:
-                httpStatus = 200;
-                break;
-            case ERROR:
-                httpStatus = 400;
-                break;
-            case UNAUTHORIZED:
-                httpStatus = 401;
-                break;
-            case NOT_FOUND:
-                httpStatus = 404;
-                break;
-            case DEPENDENCY_CONFLICT, DUPLICATION_CONFLICT:
-                httpStatus = 409;
-                break;
-            case INTERNAL_ERROR:
-                httpStatus = 500;
-                break;
-            case FORBIDDEN:
-                httpStatus = 403;
-                break;
-            default:
-                httpStatus = 500;
-        }
-        Error error = new Error();
-        error.setMessage(serviceException.getErrorMessage());
-        return new Response(httpStatus, error, null);
-    }
-
     public static SafRestException serviceExceptionToResponse(SafServiceException serviceException) {
         int httpStatus;
 
