@@ -37,7 +37,7 @@ public class ResourceUtil {
                 .compact();
     }
 
-    public static SafServiceSession generateServiceSession(DataSource dataSource, String token) throws InvalidTokenException {
+    public static SafServiceSession generateServiceSession(DataSource dataSource, String token) throws SafRestException {
 
         if (token == null) {
             return new SafServiceSession(dataSource, ServiceSessionInitiatorType.VISITOR, null);
@@ -51,7 +51,7 @@ public class ResourceUtil {
                     .parseClaimsJws(token)
                     .getBody();
         } catch (JwtException e) {
-            throw new InvalidTokenException();
+            throw new SafRestException(401, "Invalid Token");
         }
 
         ServiceSessionInitiatorType sessionType = ServiceSessionInitiatorType.valueOf(claims.get("sessionType", String.class));

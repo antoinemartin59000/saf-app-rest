@@ -86,8 +86,6 @@ public class SafEntityResource<E extends SafEntity, S extends SafEntitySearch> {
             return insertedId;
         } catch (SafServiceException e) {
             throw ResourceUtil.serviceExceptionToResponse(e);
-        } catch (InvalidTokenException e) {
-            throw new SafRestException(401, "Invalid Token.");
         } catch (IllegalArgumentException | SecurityException | JsonProcessingException e) {
             throw ResourceUtil.logServerErrorAndMakeResponse("POST " + resourceName, Map.of(), e);
         }
@@ -132,10 +130,6 @@ public class SafEntityResource<E extends SafEntity, S extends SafEntitySearch> {
 
         } catch (SafServiceException e) {
             throw ResourceUtil.serviceExceptionToResponse(e);
-        } catch (InvalidTokenException e) {
-            ResourceUtil.Error error = new ResourceUtil.Error();
-            error.setMessage("Invalid Token");
-            throw new SafRestException(401, "Invalid Token");
         } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
             throw ResourceUtil.logServerErrorAndMakeResponse("PATCH " + resourceName + "/" + id, Map.of(), e);
         }
@@ -151,8 +145,6 @@ public class SafEntityResource<E extends SafEntity, S extends SafEntitySearch> {
                 throw ResourceUtil.serviceExceptionToResponse(e);
             }
 
-        } catch (InvalidTokenException e1) {
-            throw new SafRestException(401, "Invalid Token");
         } catch (SecurityException | IllegalArgumentException e) {
             throw ResourceUtil.logServerErrorAndMakeResponse("DELETE" + resourceName + "/" + id, Map.of(), e);
         }
@@ -215,8 +207,6 @@ public class SafEntityResource<E extends SafEntity, S extends SafEntitySearch> {
             return result;
         } catch (SafRestException e) {
             throw e;
-        } catch (InvalidTokenException e1) {
-            throw new SafRestException(401, "Invalid Token.");
         } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException | NoSuchMethodException | SecurityException | SafServiceException | ClassNotFoundException e) {
             throw ResourceUtil.logServerErrorAndMakeResponse(resourceName, queryParams, e);
         }
