@@ -7,7 +7,7 @@ public abstract class OverridingPostHandler<I> {
 
     private final String resource;
     private final Class<I> inputClass;
-    
+
     public OverridingPostHandler(String resource, Class<I> inputClass) {
         this.resource = resource;
         this.inputClass = inputClass;

@@ -22,6 +22,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import io.javalin.Javalin;
 import io.javalin.http.Handler;
+import io.javalin.http.HandlerType;
 import io.javalin.json.JavalinJackson;
 
 public class SafRest extends SafApp {
@@ -29,7 +30,7 @@ public class SafRest extends SafApp {
     private final DataSource dataSource;
     private final ISafEntityServiceProvider iSafEntityServiceProvider;
     private final List<OverridingPostHandler<?>> overridingPostHandlers = new ArrayList<>();
-    private final List<AfterHandler> afterHandlers = new ArrayList<>();
+    private final List<AfterPostHandler> afterPostHandlers = new ArrayList<>();
 
     public SafRest(int statusSocketPort, DataSource dataSource, ISafEntityServiceProvider iSafEntityServiceProvider) throws SQLException {
         super(statusSocketPort, 1000);
@@ -42,8 +43,8 @@ public class SafRest extends SafApp {
         this.overridingPostHandlers.add(overridingPostHandler);
     }
 
-    public void addAfterHandler(AfterHandler afterHandler) {
-        afterHandlers.add(afterHandler);
+    public void addAfterPostHandler(AfterPostHandler afterPostHandler) {
+        afterPostHandlers.add(afterPostHandler);
     }
 
     @Override
@@ -217,21 +218,24 @@ public class SafRest extends SafApp {
                 ctx.status(204);
             });
 
-            for (AfterHandler afterHandler : afterHandlers) {
+            for (AfterPostHandler afterPostHandler : afterPostHandlers) {
 
-                config.routes.after("/api/" + afterHandler.resource(), ctx -> {
+                config.routes.after("/api/" + afterPostHandler.getResource(), ctx -> {
 
-                    if (!ctx.method().name().equals(afterHandler.requestMethod().name())) {
+                    if (!ctx.method().name().equals(HandlerType.POST.name())) {
                         return;
                     }
 
-                    Map<String, String> responseHeaders = new HashMap<>();
-                    for (String headerName : ctx.res().getHeaderNames()) {
-                        responseHeaders.put(headerName, ctx.res().getHeader(headerName));
-                    }
+                    String token = ctx.header("X-TOKEN");
 
-                    Response response = new Response(ctx.res().getStatus(), null, responseHeaders);
-                    afterHandler.responseConsumer().accept(response);
+                    String[] array = ctx.res().getHeader("location").split("/");
+                    Long insertedId = Long.valueOf(array[array.length - 1]);
+
+                    try (SafServiceSession serviceSession = ResourceUtil.generateServiceSession(dataSource, token)) {
+                        afterPostHandler.handle(serviceSession, insertedId);
+                    } catch (SafServiceException e) {
+                        throw ResourceUtil.serviceExceptionToResponse(e);
+                    }
 
                 });
 
