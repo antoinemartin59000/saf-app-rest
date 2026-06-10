@@ -1,5 +1,6 @@
 package com.antoinemartin59000.saf.apprest;
 
+import com.antoinemartin59000.saf.entityservice.ISafEntityServiceProvider;
 import com.antoinemartin59000.saf.entityservice.SafServiceSession;
 import com.antoinemartin59000.saf.entityservice.serviceexception.SafServiceException;
 
@@ -21,13 +22,13 @@ public abstract class OverridingPostHandler<I> {
         return inputClass;
     }
 
-    public abstract long handle(SafServiceSession serviceSession, I input) throws SafServiceException;
+    public abstract long handle(ISafEntityServiceProvider safEntityServiceProvider, SafServiceSession serviceSession, I input) throws SafServiceException;
 
-    public SessionIdToMemberId adminIdForToken() {
+    public SessionIdToMemberId adminIdForToken(ISafEntityServiceProvider safEntityServiceProvider) {
         return null;
     }
 
-    public SessionIdToMemberId playerIdForToken() {
+    public SessionIdToMemberId memberIdForToken(ISafEntityServiceProvider safEntityServiceProvider) {
         return null;
     }
 

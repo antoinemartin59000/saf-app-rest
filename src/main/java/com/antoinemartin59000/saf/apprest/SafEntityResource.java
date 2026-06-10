@@ -31,7 +31,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 
 import io.javalin.json.JavalinJackson;
 
-public class SafEntityResource<E extends SafEntity, S extends SafEntitySearch> {
+public class SafEntityResource<P extends ISafEntityServiceProvider, E extends SafEntity, S extends SafEntitySearch> {
 
     private final DataSource dataSource;
     private final JavalinJackson javalinJackson;
@@ -40,9 +40,9 @@ public class SafEntityResource<E extends SafEntity, S extends SafEntitySearch> {
     private final Class<S> safEntitySearch;
     private final Map<String, BiConsumer<Object /* builder */, Pair<String, String>>> biConsumersByIntervalParameters;
     private final Map<String, BiConsumer<Object /* builder */, List<String>>> biConsumersByStandardParameters;
-    private final SafEntityService<E, S> safEntityService;
+    private final SafEntityService<P, E, S> safEntityService;
 
-    public SafEntityResource(Class<E> safEntityClass, Class<S> safEntitySearch, DataSource dataSource, ISafEntityServiceProvider iSafEntityServiceProvider, JavalinJackson javalinJackson) {
+    public SafEntityResource(Class<E> safEntityClass, Class<S> safEntitySearch, DataSource dataSource, P iSafEntityServiceProvider, JavalinJackson javalinJackson) {
         this.dataSource = dataSource;
         this.javalinJackson = javalinJackson;
 
@@ -56,7 +56,7 @@ public class SafEntityResource<E extends SafEntity, S extends SafEntitySearch> {
         String serviceGetterMethodName = "get" + safEntityClass.getSimpleName() + "Service";
         try {
             Method getter = iSafEntityServiceProvider.getClass().getMethod(serviceGetterMethodName);
-            safEntityService = (SafEntityService<E, S>) getter.invoke(iSafEntityServiceProvider);
+            safEntityService = (SafEntityService<P, E, S>) getter.invoke(iSafEntityServiceProvider);
         } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
             throw new RuntimeException(iSafEntityServiceProvider.getClass().getSimpleName() + " does not have method " + serviceGetterMethodName);
         }
@@ -99,7 +99,7 @@ public class SafEntityResource<E extends SafEntity, S extends SafEntitySearch> {
             biConsumersByStandardParameters.get("id").accept(searchBuilder, List.of(String.valueOf(id)));
             S search = (S) searchBuilder.getClass().getMethod("build").invoke(searchBuilder);
 
-            // FIXME? a bit hacky, we have to open a transaction to indicate we are the code and not the player
+            // FIXME? a bit hacky, we have to open a transaction to indicate we are the code
             serviceSession.openTransaction(false);
 
             List<E> searchResult;

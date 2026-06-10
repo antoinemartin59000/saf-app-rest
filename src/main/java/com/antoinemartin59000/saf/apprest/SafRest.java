@@ -28,14 +28,14 @@ import io.javalin.json.JavalinJackson;
 public class SafRest extends SafApp {
 
     private final DataSource dataSource;
-    private final ISafEntityServiceProvider iSafEntityServiceProvider;
+    private final ISafEntityServiceProvider safEntityServiceProvider;
     private final List<OverridingPostHandler<?>> overridingPostHandlers = new ArrayList<>();
     private final List<AfterPostHandler> afterPostHandlers = new ArrayList<>();
 
-    public SafRest(int statusSocketPort, DataSource dataSource, ISafEntityServiceProvider iSafEntityServiceProvider) throws SQLException {
+    public SafRest(int statusSocketPort, DataSource dataSource, ISafEntityServiceProvider safEntityServiceProvider) throws SQLException {
         super(statusSocketPort, 1000);
         this.dataSource = dataSource;
-        this.iSafEntityServiceProvider = iSafEntityServiceProvider;
+        this.safEntityServiceProvider = safEntityServiceProvider;
         this.addStatusFieldForDataSource(dataSource);
     }
 
@@ -65,7 +65,7 @@ public class SafRest extends SafApp {
             } catch (ClassNotFoundException e) {
                 throw new RuntimeException("Class " + safEntityClass.getName() + "Search does not exist.");
             }
-            SafEntityResource entityResource = new SafEntityResource(safEntityClass, safEntitySearch, dataSource, iSafEntityServiceProvider, jsonMapper);
+            SafEntityResource entityResource = new SafEntityResource(safEntityClass, safEntitySearch, dataSource, safEntityServiceProvider, jsonMapper);
 
             String kebabSingular = SafEntityResource.camelToKebabLowerCase(safEntityClass.getSimpleName());
             String kebabPlural = Inflector.getInstance().pluralize(kebabSingular);
@@ -232,7 +232,7 @@ public class SafRest extends SafApp {
                     Long insertedId = Long.valueOf(array[array.length - 1]);
 
                     try (SafServiceSession serviceSession = ResourceUtil.generateServiceSession(dataSource, token)) {
-                        afterPostHandler.handle(serviceSession, insertedId);
+                        afterPostHandler.handle(safEntityServiceProvider, serviceSession, insertedId);
                     } catch (SafServiceException e) {
                         throw ResourceUtil.serviceExceptionToResponse(e);
                     }
@@ -265,7 +265,7 @@ public class SafRest extends SafApp {
             I input = ctx.bodyAsClass(overridingPostHandler.getInputClass());
             long insertedId;
             try (SafServiceSession serviceSession = ResourceUtil.generateServiceSession(dataSource, token)) {
-                insertedId = overridingPostHandler.handle(serviceSession, input);
+                insertedId = overridingPostHandler.handle(safEntityServiceProvider, serviceSession, input);
             } catch (SafServiceException e) {
                 throw ResourceUtil.serviceExceptionToResponse(e);
             }
@@ -274,20 +274,20 @@ public class SafRest extends SafApp {
 
             ctx.status(201);
             ctx.header("location", location);
-            if (overridingPostHandler.playerIdForToken() != null) {
-                long playerId;
+            if (overridingPostHandler.memberIdForToken(safEntityServiceProvider) != null) {
+                long memberId;
                 try (SafServiceSession serviceSession = new SafServiceSession(dataSource, ServiceSessionInitiatorType.PROCESS, null)) {
-                    playerId = overridingPostHandler.playerIdForToken().getMemberId(serviceSession, insertedId);
+                    memberId = overridingPostHandler.memberIdForToken(safEntityServiceProvider).getMemberId(serviceSession, insertedId);
                 } catch (SafServiceException e) {
                     throw ResourceUtil.serviceExceptionToResponse(e);
                 }
 
-                String newToken = ResourceUtil.generateToken(ServiceSessionInitiatorType.PLAYER, playerId); // FIXME
+                String newToken = ResourceUtil.generateToken(ServiceSessionInitiatorType.MEMBER, memberId); // FIXME
                 ctx.header("X-TOKEN", newToken);
-            } else if (overridingPostHandler.adminIdForToken() != null) {
+            } else if (overridingPostHandler.adminIdForToken(safEntityServiceProvider) != null) {
                 long adminId;
                 try (SafServiceSession serviceSession = new SafServiceSession(dataSource, ServiceSessionInitiatorType.PROCESS, null)) {
-                    adminId = overridingPostHandler.adminIdForToken().getMemberId(serviceSession, insertedId);
+                    adminId = overridingPostHandler.adminIdForToken(safEntityServiceProvider).getMemberId(serviceSession, insertedId);
                 } catch (SafServiceException e) {
                     throw ResourceUtil.serviceExceptionToResponse(e);
                 }

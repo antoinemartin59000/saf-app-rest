@@ -1,5 +1,6 @@
 package com.antoinemartin59000.saf.apprest;
 
+import com.antoinemartin59000.saf.entityservice.ISafEntityServiceProvider;
 import com.antoinemartin59000.saf.entityservice.SafServiceSession;
 import com.antoinemartin59000.saf.entityservice.serviceexception.SafServiceException;
 
@@ -15,6 +16,6 @@ public abstract class AfterPostHandler {
         return resource;
     }
 
-    public abstract void handle(SafServiceSession serviceSession, Long insertedId) throws SafServiceException;
+    public abstract void handle(ISafEntityServiceProvider iSafEntityServiceProvider, SafServiceSession serviceSession, Long insertedId) throws SafServiceException;
 
 }
