@@ -31,7 +31,7 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
     private final DataSource dataSource;
     private final P safEntityServiceProvider;
     private final Map<String, OverridingPostHandler<P, ?>> overridingPostHandlers = new HashMap<>();
-    private final List<AfterPostHandler<P>> afterPostHandlers = new ArrayList<>();
+    private final Map<String, List<AfterPostHandler<P>>> afterPostHandlersByResource = new HashMap<>();
     private final Map<String, OnPostTokenHeaderGenerator<P>> onPostTokenHeaderGenerators = new HashMap<>();
 
     public SafRest(int statusSocketPort, DataSource dataSource, P safEntityServiceProvider) throws SQLException {
@@ -45,8 +45,8 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
         this.overridingPostHandlers.put(resource, overridingPostHandler);
     }
 
-    public void addAfterPostHandler(AfterPostHandler<P> afterPostHandler) {
-        afterPostHandlers.add(afterPostHandler);
+    public void addAfterPostHandler(String resource, AfterPostHandler<P> afterPostHandler) {
+        afterPostHandlersByResource.computeIfAbsent(resource, k -> new ArrayList<AfterPostHandler<P>>()).add(afterPostHandler);
     }
 
     public void addOnPostTokenHeaderGenerator(String resource, OnPostTokenHeaderGenerator<P> onPostTokenHeaderGenerator) {
@@ -226,27 +226,32 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
                 ctx.status(204);
             });
 
-            for (AfterPostHandler<P> afterPostHandler : afterPostHandlers) {
+            for (Map.Entry<String, List<AfterPostHandler<P>>> entry : afterPostHandlersByResource.entrySet()) {
+                String resource = entry.getKey();
+                List<AfterPostHandler<P>> afterPostHandlers = entry.getValue();
 
-                config.routes.after("/api/" + afterPostHandler.getResource(), ctx -> {
+                for (AfterPostHandler<P> afterPostHandler : afterPostHandlers) {
 
-                    if (!ctx.method().name().equals(HandlerType.POST.name())) {
-                        return;
-                    }
+                    config.routes.after("/api/" + resource, ctx -> {
 
-                    String token = ctx.header("X-TOKEN");
+                        if (!ctx.method().name().equals(HandlerType.POST.name())) {
+                            return;
+                        }
 
-                    String[] array = ctx.res().getHeader("location").split("/");
-                    Long insertedId = Long.valueOf(array[array.length - 1]);
+                        String token = ctx.header("X-TOKEN");
 
-                    try (SafServiceSession serviceSession = ResourceUtil.generateServiceSession(dataSource, token)) {
-                        afterPostHandler.handle(safEntityServiceProvider, serviceSession, insertedId);
-                    } catch (SafServiceException e) {
-                        throw ResourceUtil.serviceExceptionToResponse(e);
-                    }
+                        String[] array = ctx.res().getHeader("location").split("/");
+                        Long insertedId = Long.valueOf(array[array.length - 1]);
 
-                });
+                        try (SafServiceSession serviceSession = ResourceUtil.generateServiceSession(dataSource, token)) {
+                            afterPostHandler.handle(safEntityServiceProvider, serviceSession, insertedId);
+                        } catch (SafServiceException e) {
+                            throw ResourceUtil.serviceExceptionToResponse(e);
+                        }
 
+                    });
+
+                }
             }
 
             for (Map.Entry<String, OnPostTokenHeaderGenerator<P>> entry : onPostTokenHeaderGenerators.entrySet()) {
