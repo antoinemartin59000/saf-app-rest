@@ -30,7 +30,7 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
 
     private final DataSource dataSource;
     private final P safEntityServiceProvider;
-    private final List<OverridingPostHandler<P, ?>> overridingPostHandlers = new ArrayList<>();
+    private final Map<String, OverridingPostHandler<P, ?>> overridingPostHandlers = new HashMap<>();
     private final List<AfterPostHandler<P>> afterPostHandlers = new ArrayList<>();
     private final List<OnPostTokenHeaderGenerator<P>> onPostTokenHeaderGenerators = new ArrayList<>();
 
@@ -41,8 +41,8 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
         this.addStatusFieldForDataSource(dataSource);
     }
 
-    public void overridePostHandler(OverridingPostHandler<P, ?> overridingPostHandler) {
-        this.overridingPostHandlers.add(overridingPostHandler);
+    public void overridePostHandler(String resource, OverridingPostHandler<P, ?> overridingPostHandler) {
+        this.overridingPostHandlers.put(resource, overridingPostHandler);
     }
 
     public void addAfterPostHandler(AfterPostHandler<P> afterPostHandler) {
@@ -107,11 +107,13 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
 
             config.routes.get("/api", ctx -> ctx.result("Hello World!"));
 
-            for (OverridingPostHandler<P, ?> overridingHandler : overridingPostHandlers) {
-                Handler javalinHandler = generateJavalinHandler(overridingHandler);
+            for (Map.Entry<String, OverridingPostHandler<P, ?>> entry : overridingPostHandlers.entrySet()) {
+                String resource =  entry.getKey();
+                OverridingPostHandler<P, ?> overridingPostHandler = entry.getValue();
 
-                String resource = "/api/" + overridingHandler.getResource();
-                config.routes.post(resource, javalinHandler);
+                Handler javalinHandler = generateJavalinHandler(resource, overridingPostHandler);
+
+                config.routes.post("/api/" + resource, javalinHandler);
             }
 
             config.routes.get("/api/{resource}", ctx -> {
@@ -287,7 +289,7 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
         return entityResource;
     }
 
-    private <I> Handler generateJavalinHandler(OverridingPostHandler<P, I> overridingPostHandler) {
+    private <I> Handler generateJavalinHandler(String resource, OverridingPostHandler<P, I> overridingPostHandler) {
         return ctx -> {
 
             String token = ctx.header("X-TOKEN");
@@ -300,7 +302,7 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
                 throw ResourceUtil.serviceExceptionToResponse(e);
             }
 
-            String location = overridingPostHandler.getResource() + "/" + insertedId;
+            String location = resource + "/" + insertedId;
 
             ctx.status(201);
             ctx.header("location", location);

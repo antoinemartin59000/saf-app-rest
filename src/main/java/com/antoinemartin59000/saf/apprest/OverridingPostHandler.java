@@ -6,16 +6,10 @@ import com.antoinemartin59000.saf.entityservice.serviceexception.SafServiceExcep
 
 public abstract class OverridingPostHandler<P extends ISafEntityServiceProvider, I> {
 
-    private final String resource;
     private final Class<I> inputClass;
 
-    public OverridingPostHandler(String resource, Class<I> inputClass) {
-        this.resource = resource;
+    public OverridingPostHandler(Class<I> inputClass) {
         this.inputClass = inputClass;
-    }
-
-    public String getResource() {
-        return resource;
     }
 
     public Class<I> getInputClass() {
