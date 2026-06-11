@@ -4,7 +4,7 @@ import com.antoinemartin59000.saf.entityservice.ISafEntityServiceProvider;
 import com.antoinemartin59000.saf.entityservice.SafServiceSession;
 import com.antoinemartin59000.saf.entityservice.serviceexception.SafServiceException;
 
-public abstract class AfterPostHandler {
+public abstract class AfterPostHandler<P extends ISafEntityServiceProvider> {
 
     private final String resource;
 
@@ -16,6 +16,6 @@ public abstract class AfterPostHandler {
         return resource;
     }
 
-    public abstract void handle(ISafEntityServiceProvider iSafEntityServiceProvider, SafServiceSession serviceSession, Long insertedId) throws SafServiceException;
+    public abstract void handle(P safEntityServiceProvider, SafServiceSession serviceSession, Long insertedId) throws SafServiceException;
 
 }

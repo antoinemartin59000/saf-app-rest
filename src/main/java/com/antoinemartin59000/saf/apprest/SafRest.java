@@ -26,30 +26,30 @@ import io.javalin.http.Handler;
 import io.javalin.http.HandlerType;
 import io.javalin.json.JavalinJackson;
 
-public class SafRest extends SafApp {
+public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
 
     private final DataSource dataSource;
-    private final ISafEntityServiceProvider safEntityServiceProvider;
-    private final List<OverridingPostHandler<?>> overridingPostHandlers = new ArrayList<>();
-    private final List<AfterPostHandler> afterPostHandlers = new ArrayList<>();
-    private final List<OnPostTokenHeaderGenerator> onPostTokenHeaderGenerators = new ArrayList<>();
+    private final P safEntityServiceProvider;
+    private final List<OverridingPostHandler<P, ?>> overridingPostHandlers = new ArrayList<>();
+    private final List<AfterPostHandler<P>> afterPostHandlers = new ArrayList<>();
+    private final List<OnPostTokenHeaderGenerator<P>> onPostTokenHeaderGenerators = new ArrayList<>();
 
-    public SafRest(int statusSocketPort, DataSource dataSource, ISafEntityServiceProvider safEntityServiceProvider) throws SQLException {
+    public SafRest(int statusSocketPort, DataSource dataSource, P safEntityServiceProvider) throws SQLException {
         super(statusSocketPort, 1000);
         this.dataSource = dataSource;
         this.safEntityServiceProvider = safEntityServiceProvider;
         this.addStatusFieldForDataSource(dataSource);
     }
 
-    public void overridePostHandler(OverridingPostHandler<?> overridingPostHandler) {
+    public void overridePostHandler(OverridingPostHandler<P, ?> overridingPostHandler) {
         this.overridingPostHandlers.add(overridingPostHandler);
     }
 
-    public void addAfterPostHandler(AfterPostHandler afterPostHandler) {
+    public void addAfterPostHandler(AfterPostHandler<P> afterPostHandler) {
         afterPostHandlers.add(afterPostHandler);
     }
 
-    public void addOnPostTokenHeaderGenerator(OnPostTokenHeaderGenerator onPostTokenHeaderGenerator) {
+    public void addOnPostTokenHeaderGenerator(OnPostTokenHeaderGenerator<P> onPostTokenHeaderGenerator) {
         onPostTokenHeaderGenerators.add(onPostTokenHeaderGenerator);
     }
 
@@ -107,7 +107,7 @@ public class SafRest extends SafApp {
 
             config.routes.get("/api", ctx -> ctx.result("Hello World!"));
 
-            for (OverridingPostHandler<?> overridingHandler : overridingPostHandlers) {
+            for (OverridingPostHandler<P, ?> overridingHandler : overridingPostHandlers) {
                 Handler javalinHandler = generateJavalinHandler(overridingHandler);
 
                 String resource = "/api/" + overridingHandler.getResource();
@@ -224,7 +224,7 @@ public class SafRest extends SafApp {
                 ctx.status(204);
             });
 
-            for (AfterPostHandler afterPostHandler : afterPostHandlers) {
+            for (AfterPostHandler<P> afterPostHandler : afterPostHandlers) {
 
                 config.routes.after("/api/" + afterPostHandler.getResource(), ctx -> {
 
@@ -247,7 +247,7 @@ public class SafRest extends SafApp {
 
             }
 
-            for (OnPostTokenHeaderGenerator onPostTokenHeaderGenerator : onPostTokenHeaderGenerators) {
+            for (OnPostTokenHeaderGenerator<P> onPostTokenHeaderGenerator : onPostTokenHeaderGenerators) {
 
                 config.routes.after("/api/" + onPostTokenHeaderGenerator.getResource(), ctx -> {
 
@@ -287,7 +287,7 @@ public class SafRest extends SafApp {
         return entityResource;
     }
 
-    private <I, O> Handler generateJavalinHandler(OverridingPostHandler<I> overridingPostHandler) {
+    private <I> Handler generateJavalinHandler(OverridingPostHandler<P, I> overridingPostHandler) {
         return ctx -> {
 
             String token = ctx.header("X-TOKEN");

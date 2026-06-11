@@ -4,7 +4,7 @@ import com.antoinemartin59000.saf.entityservice.ISafEntityServiceProvider;
 import com.antoinemartin59000.saf.entityservice.SafServiceSession;
 import com.antoinemartin59000.saf.entityservice.serviceexception.SafServiceException;
 
-public abstract class OverridingPostHandler<I> {
+public abstract class OverridingPostHandler<P extends ISafEntityServiceProvider, I> {
 
     private final String resource;
     private final Class<I> inputClass;
@@ -22,6 +22,6 @@ public abstract class OverridingPostHandler<I> {
         return inputClass;
     }
 
-    public abstract long handle(ISafEntityServiceProvider safEntityServiceProvider, SafServiceSession serviceSession, I input) throws SafServiceException;
+    public abstract long handle(P safEntityServiceProvider, SafServiceSession serviceSession, I input) throws SafServiceException;
 
 }

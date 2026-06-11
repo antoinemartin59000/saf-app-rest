@@ -6,7 +6,7 @@ import com.antoinemartin59000.saf.entityservice.SafServiceSession;
 import com.antoinemartin59000.saf.entityservice.SafServiceSession.ServiceSessionInitiatorType;
 import com.antoinemartin59000.saf.entityservice.serviceexception.SafServiceException;
 
-public abstract class OnPostTokenHeaderGenerator {
+public abstract class OnPostTokenHeaderGenerator<P extends ISafEntityServiceProvider> {
 
     private final String resource;
 
@@ -18,6 +18,6 @@ public abstract class OnPostTokenHeaderGenerator {
         return resource;
     }
 
-    public abstract Pair<ServiceSessionInitiatorType, Long> generateTokenDetail(ISafEntityServiceProvider iSafEntityServiceProvider, SafServiceSession serviceSession, Long insertedId) throws SafServiceException;
+    public abstract Pair<ServiceSessionInitiatorType, Long> generateTokenDetail(P safEntityServiceProvider, SafServiceSession serviceSession, Long insertedId) throws SafServiceException;
 
 }
