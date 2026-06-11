@@ -23,6 +23,7 @@ import com.antoinemartin59000.saf.common.Pair;
 import com.antoinemartin59000.saf.entity.ReflectionUtils;
 import com.antoinemartin59000.saf.entity.SafEntity;
 import com.antoinemartin59000.saf.entity.SafEntitySearch;
+import com.antoinemartin59000.saf.entity.SafEntitySearch.EntitySearchBuilder;
 import com.antoinemartin59000.saf.entityservice.ISafEntityServiceProvider;
 import com.antoinemartin59000.saf.entityservice.SafEntityService;
 import com.antoinemartin59000.saf.entityservice.SafServiceSession;
@@ -31,15 +32,15 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 
 import io.javalin.json.JavalinJackson;
 
-public class SafEntityResource<P extends ISafEntityServiceProvider, E extends SafEntity, S extends SafEntitySearch> {
+public class SafEntityResource<P extends ISafEntityServiceProvider, E extends SafEntity, S extends SafEntitySearch<E>> {
 
     private final DataSource dataSource;
     private final JavalinJackson javalinJackson;
 
     private final Class<E> safEntityClass;
     private final Class<S> safEntitySearch;
-    private final Map<String, BiConsumer<Object /* builder */, Pair<String, String>>> biConsumersByIntervalParameters;
-    private final Map<String, BiConsumer<Object /* builder */, List<String>>> biConsumersByStandardParameters;
+    private final Map<String, BiConsumer<EntitySearchBuilder<S>, Pair<String, String>>> biConsumersByIntervalParameters;
+    private final Map<String, BiConsumer<EntitySearchBuilder<S>, List<String>>> biConsumersByStandardParameters;
     private final SafEntityService<P, E, S> safEntityService;
 
     public SafEntityResource(Class<E> safEntityClass, Class<S> safEntitySearch, DataSource dataSource, P iSafEntityServiceProvider, JavalinJackson javalinJackson) {
@@ -49,17 +50,11 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
         this.safEntityClass = safEntityClass;
         this.safEntitySearch = safEntitySearch;
 
-        Class<?> searchBuilderClass = safEntitySearch.getDeclaredClasses()[0];
+        Class<EntitySearchBuilder<S>> searchBuilderClass = (Class<EntitySearchBuilder<S>>) safEntitySearch.getDeclaredClasses()[0];
         this.biConsumersByIntervalParameters = generateBiConsumersByIntervalParameters(searchBuilderClass);
         this.biConsumersByStandardParameters = generateBiConsumersByStandardParameters(searchBuilderClass);
 
-        String serviceGetterMethodName = "get" + safEntityClass.getSimpleName() + "Service";
-        try {
-            Method getter = iSafEntityServiceProvider.getClass().getMethod(serviceGetterMethodName);
-            safEntityService = (SafEntityService<P, E, S>) getter.invoke(iSafEntityServiceProvider);
-        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
-            throw new RuntimeException(iSafEntityServiceProvider.getClass().getSimpleName() + " does not have method " + serviceGetterMethodName);
-        }
+        safEntityService = iSafEntityServiceProvider.get(safEntityClass);
     }
 
     public E get(String token, String resourceName, String dataSource, Long id) throws SafRestException {
@@ -95,9 +90,9 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
 
         try (SafServiceSession serviceSession = TokenHandler.generateServiceSession(dataSource, token)) {
 
-            Object searchBuilder = safEntitySearch.getMethod("builder").invoke(null);
+            EntitySearchBuilder<S> searchBuilder = (EntitySearchBuilder<S>) safEntitySearch.getMethod("builder").invoke(null);
             biConsumersByStandardParameters.get("id").accept(searchBuilder, List.of(String.valueOf(id)));
-            S search = (S) searchBuilder.getClass().getMethod("build").invoke(searchBuilder);
+            S search = searchBuilder.build();
 
             List<E> searchResult = serviceSession.asDeity(() -> safEntityService.searchFromDb(serviceSession, search));
 
@@ -106,8 +101,6 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
             }
 
             E entity = searchResult.get(0);
-
-            //
 
             Object entityFromBody;
             try {
@@ -146,11 +139,11 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
         try (SafServiceSession serviceSession = TokenHandler.generateServiceSession(dataSource, token)) {
 
             Class<?> searchClass = Class.forName(safEntityClass.getName() + "Search");
-            Object searchBuilder = searchClass.getMethod("builder").invoke(null);
+            EntitySearchBuilder<S> searchBuilder = (EntitySearchBuilder<S>) searchClass.getMethod("builder").invoke(null);
 
-            for (Map.Entry<String, BiConsumer<Object /* builder */, Pair<String, String>>> entry : biConsumersByIntervalParameters.entrySet()) {
+            for (Map.Entry<String, BiConsumer<EntitySearchBuilder<S>, Pair<String, String>>> entry : biConsumersByIntervalParameters.entrySet()) {
                 String intervalParameterName = entry.getKey();
-                BiConsumer<Object /* builder */, Pair<String, String>> biConsumer = entry.getValue();
+                BiConsumer<EntitySearchBuilder<S>, Pair<String, String>> biConsumer = entry.getValue();
 
                 String minParamNam = "min-" + intervalParameterName;
                 String maxParamNam = "max-" + intervalParameterName;
@@ -183,7 +176,7 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
                     throw new SafRestException(400, "invalid query parameter for resource " + resourceName + ": " + paramName);
                 }
 
-                BiConsumer<Object, List<String>> biConsumer = biConsumersByStandardParameters.get(paramName);
+                BiConsumer<EntitySearchBuilder<S>, List<String>> biConsumer = biConsumersByStandardParameters.get(paramName);
                 biConsumer.accept(searchBuilder, values);
             }
 
@@ -204,13 +197,13 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
         }
     }
 
-    private static Map<String, BiConsumer<Object /* builder */, Pair<String, String>>> generateBiConsumersByIntervalParameters(Class<?> searchBuilderClass) {
+    private Map<String, BiConsumer<EntitySearchBuilder<S>, Pair<String, String>>> generateBiConsumersByIntervalParameters(Class<EntitySearchBuilder<S>> searchBuilderClass) {
 
         List<Method> intervalByMethods = Arrays.stream(searchBuilderClass.getMethods())
                 .filter(m -> m.getName().startsWith("by") && m.getName().endsWith("Interval"))
                 .toList();
 
-        Map<String, BiConsumer<Object /* builder */, Pair<String, String>>> biConsumersByIntervalListParameters = new HashMap<>();
+        Map<String, BiConsumer<EntitySearchBuilder<S>, Pair<String, String>>> biConsumersByIntervalListParameters = new HashMap<>();
         for (Method byMethod : intervalByMethods) {
 
             Type[] parameterTypes = byMethod.getGenericParameterTypes();
@@ -223,7 +216,7 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
 
             Type actualTypeArgument = parameterizedTypeCollection.getRawType();
 
-            BiConsumer<Object, Pair<String, String>> biConsumer;
+            BiConsumer<EntitySearchBuilder<S>, Pair<String, String>> biConsumer;
 
             if (actualTypeArgument == Pair.class) {
                 if (parameterizedTypeCollection.getActualTypeArguments()[0] == OffsetDateTime.class &&
@@ -269,13 +262,13 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
 
     }
 
-    private static Map<String, BiConsumer<Object /* builder */, List<String>>> generateBiConsumersByStandardParameters(Class<?> searchBuilderClass) {
+    private Map<String, BiConsumer<EntitySearchBuilder<S>, List<String>>> generateBiConsumersByStandardParameters(Class<EntitySearchBuilder<S>> searchBuilderClass) {
 
         List<Method> standardByMethods = Arrays.stream(searchBuilderClass.getMethods())
                 .filter(m -> m.getName().startsWith("by") && !m.getName().endsWith("Interval") && !m.getName().equals("byCustomWhereClause"))
                 .toList();
 
-        Map<String, BiConsumer<Object /* builder */, List<String>>> biConsumersByStandardListParameters = new HashMap<>();
+        Map<String, BiConsumer<EntitySearchBuilder<S>, List<String>>> biConsumersByStandardListParameters = new HashMap<>();
         for (Method byMethod : standardByMethods) {
 
             Type[] parameterTypes = byMethod.getGenericParameterTypes();
@@ -291,7 +284,7 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
                 throw new RuntimeException("TODO", e);
             }
 
-            BiConsumer<Object, List<String>> biConsumer;
+            BiConsumer<EntitySearchBuilder<S>, List<String>> biConsumer;
             if (actualTypeArgument == Long.class) {
                 biConsumer = (b, vals) -> invokeWithArray(b, byMethod, vals, Long::valueOf, Long[]::new);
             } else if (actualTypeArgument == String.class) {
