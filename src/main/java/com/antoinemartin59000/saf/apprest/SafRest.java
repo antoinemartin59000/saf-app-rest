@@ -10,6 +10,7 @@ import java.util.Set;
 import javax.sql.DataSource;
 
 import com.antoinemartin59000.saf.app.SafApp;
+import com.antoinemartin59000.saf.common.Pair;
 import com.antoinemartin59000.saf.common.SubClassCollector;
 import com.antoinemartin59000.saf.entity.Inflector;
 import com.antoinemartin59000.saf.entity.SafEntity;
@@ -31,6 +32,7 @@ public class SafRest extends SafApp {
     private final ISafEntityServiceProvider safEntityServiceProvider;
     private final List<OverridingPostHandler<?>> overridingPostHandlers = new ArrayList<>();
     private final List<AfterPostHandler> afterPostHandlers = new ArrayList<>();
+    private final List<OnPostTokenHeaderGenerator> onPostTokenHeaderGenerators = new ArrayList<>();
 
     public SafRest(int statusSocketPort, DataSource dataSource, ISafEntityServiceProvider safEntityServiceProvider) throws SQLException {
         super(statusSocketPort, 1000);
@@ -45,6 +47,10 @@ public class SafRest extends SafApp {
 
     public void addAfterPostHandler(AfterPostHandler afterPostHandler) {
         afterPostHandlers.add(afterPostHandler);
+    }
+
+    public void addOnPostTokenHeaderGenerator(OnPostTokenHeaderGenerator onPostTokenHeaderGenerator) {
+        onPostTokenHeaderGenerators.add(onPostTokenHeaderGenerator);
     }
 
     @Override
@@ -241,6 +247,30 @@ public class SafRest extends SafApp {
 
             }
 
+            for (OnPostTokenHeaderGenerator onPostTokenHeaderGenerator : onPostTokenHeaderGenerators) {
+
+                config.routes.after("/api/" + onPostTokenHeaderGenerator.getResource(), ctx -> {
+
+                    if (!ctx.method().name().equals(HandlerType.POST.name())) {
+                        return;
+                    }
+
+                    String[] array = ctx.res().getHeader("location").split("/");
+                    Long insertedId = Long.valueOf(array[array.length - 1]);
+
+                    Pair<ServiceSessionInitiatorType, Long> pair;
+                    try (SafServiceSession serviceSession = new SafServiceSession(dataSource, ServiceSessionInitiatorType.PROCESS, null);) {
+                        pair = onPostTokenHeaderGenerator.generateTokenDetail(safEntityServiceProvider, serviceSession, insertedId);
+                    } catch (SafServiceException e) {
+                        throw ResourceUtil.serviceExceptionToResponse(e);
+                    }
+
+                    String newToken = ResourceUtil.generateToken(pair.first(), pair.second());
+                    ctx.header("X-TOKEN", newToken);
+                });
+
+            }
+
         });
 
         app.start(8080);
@@ -274,27 +304,6 @@ public class SafRest extends SafApp {
 
             ctx.status(201);
             ctx.header("location", location);
-            if (overridingPostHandler.memberIdForToken(safEntityServiceProvider) != null) {
-                long memberId;
-                try (SafServiceSession serviceSession = new SafServiceSession(dataSource, ServiceSessionInitiatorType.PROCESS, null)) {
-                    memberId = overridingPostHandler.memberIdForToken(safEntityServiceProvider).getMemberId(serviceSession, insertedId);
-                } catch (SafServiceException e) {
-                    throw ResourceUtil.serviceExceptionToResponse(e);
-                }
-
-                String newToken = ResourceUtil.generateToken(ServiceSessionInitiatorType.MEMBER, memberId); // FIXME
-                ctx.header("X-TOKEN", newToken);
-            } else if (overridingPostHandler.adminIdForToken(safEntityServiceProvider) != null) {
-                long adminId;
-                try (SafServiceSession serviceSession = new SafServiceSession(dataSource, ServiceSessionInitiatorType.PROCESS, null)) {
-                    adminId = overridingPostHandler.adminIdForToken(safEntityServiceProvider).getMemberId(serviceSession, insertedId);
-                } catch (SafServiceException e) {
-                    throw ResourceUtil.serviceExceptionToResponse(e);
-                }
-
-                String newToken = ResourceUtil.generateToken(ServiceSessionInitiatorType.ADMINISTRATOR, adminId);
-                ctx.header("X-TOKEN", newToken);
-            }
         };
     }
 

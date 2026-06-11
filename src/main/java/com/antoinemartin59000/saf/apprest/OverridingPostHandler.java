@@ -24,12 +24,4 @@ public abstract class OverridingPostHandler<I> {
 
     public abstract long handle(ISafEntityServiceProvider safEntityServiceProvider, SafServiceSession serviceSession, I input) throws SafServiceException;
 
-    public SessionIdToMemberId adminIdForToken(ISafEntityServiceProvider safEntityServiceProvider) {
-        return null;
-    }
-
-    public SessionIdToMemberId memberIdForToken(ISafEntityServiceProvider safEntityServiceProvider) {
-        return null;
-    }
-
 }

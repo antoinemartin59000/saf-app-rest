@@ -87,7 +87,7 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
         } catch (SafServiceException e) {
             throw ResourceUtil.serviceExceptionToResponse(e);
         } catch (IllegalArgumentException | SecurityException | JsonProcessingException e) {
-            throw ResourceUtil.logServerErrorAndMakeResponse("POST " + resourceName, Map.of(), e);
+            throw logServerErrorAndMakeResponse("POST " + resourceName, Map.of(), e);
         }
     }
 
@@ -121,7 +121,7 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
             try {
                 entityFromBody = javalinJackson.getMapper().readValue(json, safEntityClass);
             } catch (JsonProcessingException e) {
-                throw ResourceUtil.logServerErrorAndMakeResponse("PATCH " + resourceName + "/" + id, Map.of(), e);
+                throw logServerErrorAndMakeResponse("PATCH " + resourceName + "/" + id, Map.of(), e);
             }
 
             copyPropertiesIfInJson(entity, entityFromBody, json);
@@ -131,7 +131,7 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
         } catch (SafServiceException e) {
             throw ResourceUtil.serviceExceptionToResponse(e);
         } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
-            throw ResourceUtil.logServerErrorAndMakeResponse("PATCH " + resourceName + "/" + id, Map.of(), e);
+            throw logServerErrorAndMakeResponse("PATCH " + resourceName + "/" + id, Map.of(), e);
         }
     }
 
@@ -146,7 +146,7 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
             }
 
         } catch (SecurityException | IllegalArgumentException e) {
-            throw ResourceUtil.logServerErrorAndMakeResponse("DELETE" + resourceName + "/" + id, Map.of(), e);
+            throw logServerErrorAndMakeResponse("DELETE" + resourceName + "/" + id, Map.of(), e);
         }
     }
 
@@ -208,7 +208,7 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
         } catch (SafRestException e) {
             throw e;
         } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException | NoSuchMethodException | SecurityException | SafServiceException | ClassNotFoundException e) {
-            throw ResourceUtil.logServerErrorAndMakeResponse(resourceName, queryParams, e);
+            throw logServerErrorAndMakeResponse(resourceName, queryParams, e);
         }
     }
 
@@ -428,6 +428,13 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
         } catch (NoSuchMethodException e) {
             return null;
         }
+    }
+
+    public static SafRestException logServerErrorAndMakeResponse(String path, Map<String, List<String>> queryParams, Exception e) throws SafRestException {
+        System.out.println("Error on request " + path);
+        System.out.println("query params:" + queryParams);
+        e.printStackTrace();
+        return new SafRestException(500, "Server error.");
     }
 
 }

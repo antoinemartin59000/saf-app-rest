@@ -2,7 +2,6 @@ package com.antoinemartin59000.saf.apprest;
 
 import java.util.Date;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import javax.crypto.SecretKey;
@@ -104,13 +103,6 @@ public class ResourceUtil {
         }
 
         return new SafRestException(httpStatus, serviceException.getErrorMessage());
-    }
-
-    public static SafRestException logServerErrorAndMakeResponse(String path, Map<String, List<String>> queryParams, Exception e) throws SafRestException {
-        System.out.println("Error on request " + path);
-        System.out.println("query params:" + queryParams);
-        e.printStackTrace();
-        return new SafRestException(500, "Server error.");
     }
 
 }
