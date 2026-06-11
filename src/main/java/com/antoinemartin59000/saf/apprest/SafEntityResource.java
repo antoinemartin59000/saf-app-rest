@@ -78,22 +78,22 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
 
     public Long post(String token, String resourceName, String json) throws SafRestException {
 
-        try (SafServiceSession serviceSession = ResourceUtil.generateServiceSession(dataSource, token)) {
+        try (SafServiceSession serviceSession = TokenHandler.generateServiceSession(dataSource, token)) {
 
             E entity = (E) javalinJackson.getMapper().readValue(json, safEntityClass);
             Long insertedId = safEntityService.insert(serviceSession, entity);
 
             return insertedId;
         } catch (SafServiceException e) {
-            throw ResourceUtil.serviceExceptionToResponse(e);
+            throw SafRestException.fromServiceException(e);
         } catch (IllegalArgumentException | SecurityException | JsonProcessingException e) {
-            throw logServerErrorAndMakeResponse("POST " + resourceName, Map.of(), e);
+            throw new SafRestException(500, "Server error.");
         }
     }
 
     public void patch(String token, String resourceName, long id, String json) throws SafRestException {
 
-        try (SafServiceSession serviceSession = ResourceUtil.generateServiceSession(dataSource, token)) {
+        try (SafServiceSession serviceSession = TokenHandler.generateServiceSession(dataSource, token)) {
 
             Object searchBuilder = safEntitySearch.getMethod("builder").invoke(null);
             biConsumersByStandardParameters.get("id").accept(searchBuilder, List.of(String.valueOf(id)));
@@ -121,7 +121,7 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
             try {
                 entityFromBody = javalinJackson.getMapper().readValue(json, safEntityClass);
             } catch (JsonProcessingException e) {
-                throw logServerErrorAndMakeResponse("PATCH " + resourceName + "/" + id, Map.of(), e);
+                throw new SafRestException(500, "Server error.");
             }
 
             copyPropertiesIfInJson(entity, entityFromBody, json);
@@ -129,29 +129,29 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
             safEntityService.update(serviceSession, entity);
 
         } catch (SafServiceException e) {
-            throw ResourceUtil.serviceExceptionToResponse(e);
+            throw SafRestException.fromServiceException(e);
         } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
-            throw logServerErrorAndMakeResponse("PATCH " + resourceName + "/" + id, Map.of(), e);
+            throw new SafRestException(500, "Server error.");
         }
     }
 
     public void delete(String token, String resourceName, long id) throws SafRestException {
 
-        try (SafServiceSession serviceSession = ResourceUtil.generateServiceSession(dataSource, token)) {
+        try (SafServiceSession serviceSession = TokenHandler.generateServiceSession(dataSource, token)) {
 
             try {
                 safEntityService.delete(serviceSession, id);
             } catch (SafServiceException e) {
-                throw ResourceUtil.serviceExceptionToResponse(e);
+                throw SafRestException.fromServiceException(e);
             }
 
         } catch (SecurityException | IllegalArgumentException e) {
-            throw logServerErrorAndMakeResponse("DELETE" + resourceName + "/" + id, Map.of(), e);
+            throw new SafRestException(500, "Server error.");
         }
     }
 
     public List<E> get(String token, String resourceName, Map<String, List<String>> queryParams, String dataSourceQueryParam) throws SafRestException {
-        try (SafServiceSession serviceSession = ResourceUtil.generateServiceSession(dataSource, token)) {
+        try (SafServiceSession serviceSession = TokenHandler.generateServiceSession(dataSource, token)) {
 
             Class<?> searchClass = Class.forName(safEntityClass.getName() + "Search");
             Object searchBuilder = searchClass.getMethod("builder").invoke(null);
@@ -208,7 +208,7 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
         } catch (SafRestException e) {
             throw e;
         } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException | NoSuchMethodException | SecurityException | SafServiceException | ClassNotFoundException e) {
-            throw logServerErrorAndMakeResponse(resourceName, queryParams, e);
+            throw new SafRestException(500, "Server error.");
         }
     }
 
@@ -428,13 +428,6 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
         } catch (NoSuchMethodException e) {
             return null;
         }
-    }
-
-    public static SafRestException logServerErrorAndMakeResponse(String path, Map<String, List<String>> queryParams, Exception e) throws SafRestException {
-        System.out.println("Error on request " + path);
-        System.out.println("query params:" + queryParams);
-        e.printStackTrace();
-        return new SafRestException(500, "Server error.");
     }
 
 }

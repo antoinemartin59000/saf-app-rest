@@ -9,7 +9,6 @@ import javax.sql.DataSource;
 
 import com.antoinemartin59000.saf.entityservice.SafServiceSession;
 import com.antoinemartin59000.saf.entityservice.SafServiceSession.ServiceSessionInitiatorType;
-import com.antoinemartin59000.saf.entityservice.serviceexception.SafServiceException;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
@@ -17,7 +16,7 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 
-public class ResourceUtil {
+public class TokenHandler {
 
     private static final SecretKey SECRET_KEY = Keys.secretKeyFor(SignatureAlgorithm.HS256);
     private static final long EXPIRATION_MS = 3_600_000; // 1 hour
@@ -57,52 +56,6 @@ public class ResourceUtil {
         Long id = claims.get("id", Long.class);
 
         return new SafServiceSession(dataSource, sessionType, id);
-    }
-
-    public static class Error {
-
-        private String message;
-
-        public String getMessage() {
-            return message;
-        }
-
-        public void setMessage(String message) {
-            this.message = message;
-        }
-
-    }
-
-    public static SafRestException serviceExceptionToResponse(SafServiceException serviceException) {
-        int httpStatus;
-
-        switch (serviceException.getResultStatus()) {
-            case OK:
-                httpStatus = 200;
-                break;
-            case ERROR:
-                httpStatus = 400;
-                break;
-            case UNAUTHORIZED:
-                httpStatus = 401;
-                break;
-            case NOT_FOUND:
-                httpStatus = 404;
-                break;
-            case DEPENDENCY_CONFLICT, DUPLICATION_CONFLICT:
-                httpStatus = 409;
-                break;
-            case INTERNAL_ERROR:
-                httpStatus = 500;
-                break;
-            case FORBIDDEN:
-                httpStatus = 403;
-                break;
-            default:
-                httpStatus = 500;
-        }
-
-        return new SafRestException(httpStatus, serviceException.getErrorMessage());
     }
 
 }

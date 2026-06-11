@@ -86,8 +86,15 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
             config.jsonMapper(jsonMapper);
 
             config.routes.exception(SafRestException.class, (e, ctx) -> {
-                ResourceUtil.Error error = new ResourceUtil.Error();
-                error.setMessage(e.getMessage());
+
+                if (e.getCode() >= 500) {
+                    System.out.println("Error on request " + ctx.path());
+                    System.out.println("query params:" + ctx.queryString());
+                    e.printStackTrace();
+                }
+
+                Map<String, String> error = new HashMap<>();
+                error.put("message", e.getMessage());
                 ctx.json(error);
                 ctx.status(e.getCode());
             });
@@ -243,10 +250,10 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
                         String[] array = ctx.res().getHeader("location").split("/");
                         Long insertedId = Long.valueOf(array[array.length - 1]);
 
-                        try (SafServiceSession serviceSession = ResourceUtil.generateServiceSession(dataSource, token)) {
+                        try (SafServiceSession serviceSession = TokenHandler.generateServiceSession(dataSource, token)) {
                             afterPostHandler.handle(safEntityServiceProvider, serviceSession, insertedId);
                         } catch (SafServiceException e) {
-                            throw ResourceUtil.serviceExceptionToResponse(e);
+                            throw SafRestException.fromServiceException(e);
                         }
 
                     });
@@ -272,10 +279,10 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
                     try (SafServiceSession serviceSession = new SafServiceSession(dataSource, ServiceSessionInitiatorType.PROCESS, null);) {
                         pair = onPostTokenHeaderGenerator.generateTokenDetail(safEntityServiceProvider, serviceSession, insertedId);
                     } catch (SafServiceException e) {
-                        throw ResourceUtil.serviceExceptionToResponse(e);
+                        throw SafRestException.fromServiceException(e);
                     }
 
-                    String newToken = ResourceUtil.generateToken(pair.first(), pair.second());
+                    String newToken = TokenHandler.generateToken(pair.first(), pair.second());
                     ctx.header("X-TOKEN", newToken);
                 });
 
@@ -304,10 +311,10 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
 
             I input = ctx.bodyAsClass(overridingPostHandler.getInputClass());
             long insertedId;
-            try (SafServiceSession serviceSession = ResourceUtil.generateServiceSession(dataSource, token)) {
+            try (SafServiceSession serviceSession = TokenHandler.generateServiceSession(dataSource, token)) {
                 insertedId = overridingPostHandler.handle(safEntityServiceProvider, serviceSession, input);
             } catch (SafServiceException e) {
-                throw ResourceUtil.serviceExceptionToResponse(e);
+                throw SafRestException.fromServiceException(e);
             }
 
             String location = resource + "/" + insertedId;
