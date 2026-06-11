@@ -99,15 +99,7 @@ public class SafEntityResource<P extends ISafEntityServiceProvider, E extends Sa
             biConsumersByStandardParameters.get("id").accept(searchBuilder, List.of(String.valueOf(id)));
             S search = (S) searchBuilder.getClass().getMethod("build").invoke(searchBuilder);
 
-            // FIXME? a bit hacky, we have to open a transaction to indicate we are the code
-            serviceSession.openTransaction(false);
-
-            List<E> searchResult;
-            try {
-                searchResult = safEntityService.searchFromDb(serviceSession, search);
-            } finally {
-                serviceSession.closeTransaction();
-            }
+            List<E> searchResult = serviceSession.asDeity(() -> safEntityService.searchFromDb(serviceSession, search));
 
             if (searchResult.isEmpty()) {
                 throw new SafRestException(404, "entity not found with id " + id);
