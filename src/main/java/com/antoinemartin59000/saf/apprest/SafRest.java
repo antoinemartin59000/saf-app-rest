@@ -32,7 +32,7 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
     private final P safEntityServiceProvider;
     private final Map<String, OverridingPostHandler<P, ?>> overridingPostHandlers = new HashMap<>();
     private final List<AfterPostHandler<P>> afterPostHandlers = new ArrayList<>();
-    private final List<OnPostTokenHeaderGenerator<P>> onPostTokenHeaderGenerators = new ArrayList<>();
+    private final Map<String, OnPostTokenHeaderGenerator<P>> onPostTokenHeaderGenerators = new HashMap<>();
 
     public SafRest(int statusSocketPort, DataSource dataSource, P safEntityServiceProvider) throws SQLException {
         super(statusSocketPort, 1000);
@@ -49,8 +49,8 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
         afterPostHandlers.add(afterPostHandler);
     }
 
-    public void addOnPostTokenHeaderGenerator(OnPostTokenHeaderGenerator<P> onPostTokenHeaderGenerator) {
-        onPostTokenHeaderGenerators.add(onPostTokenHeaderGenerator);
+    public void addOnPostTokenHeaderGenerator(String resource, OnPostTokenHeaderGenerator<P> onPostTokenHeaderGenerator) {
+        onPostTokenHeaderGenerators.put(resource, onPostTokenHeaderGenerator);
     }
 
     @Override
@@ -249,9 +249,12 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
 
             }
 
-            for (OnPostTokenHeaderGenerator<P> onPostTokenHeaderGenerator : onPostTokenHeaderGenerators) {
+            for (Map.Entry<String, OnPostTokenHeaderGenerator<P>> entry : onPostTokenHeaderGenerators.entrySet()) {
+                
+                String resource = entry.getKey();
+                OnPostTokenHeaderGenerator<P> onPostTokenHeaderGenerator = entry.getValue();
 
-                config.routes.after("/api/" + onPostTokenHeaderGenerator.getResource(), ctx -> {
+                config.routes.after("/api/" + resource, ctx -> {
 
                     if (!ctx.method().name().equals(HandlerType.POST.name())) {
                         return;

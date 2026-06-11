@@ -8,16 +8,6 @@ import com.antoinemartin59000.saf.entityservice.serviceexception.SafServiceExcep
 
 public abstract class OnPostTokenHeaderGenerator<P extends ISafEntityServiceProvider> {
 
-    private final String resource;
-
-    public OnPostTokenHeaderGenerator(String resource) {
-        this.resource = resource;
-    }
-
-    public String getResource() {
-        return resource;
-    }
-
     public abstract Pair<ServiceSessionInitiatorType, Long> generateTokenDetail(P safEntityServiceProvider, SafServiceSession serviceSession, Long insertedId) throws SafServiceException;
 
 }
