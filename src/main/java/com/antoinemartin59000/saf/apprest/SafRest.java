@@ -60,7 +60,7 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
         jsonMapper.getMapper().registerModule(new JavaTimeModule());
         jsonMapper.getMapper().disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
-        Map<String, SafEntityResource> safEntityResourcesByResourceName = new HashMap<>();
+        Map<String, SafEntityResource<P, ?, ?>> safEntityResourcesByResourceName = new HashMap<>();
 
         Set<Class<? extends SafEntity>> safEntityClasses = SubClassCollector.findAllSubclasses(SafEntity.class);
         for (Class<? extends SafEntity> safEntityClass : safEntityClasses) {
@@ -71,7 +71,7 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
             } catch (ClassNotFoundException e) {
                 throw new RuntimeException("Class " + safEntityClass.getName() + "Search does not exist.");
             }
-            SafEntityResource entityResource = new SafEntityResource(safEntityClass, safEntitySearch, dataSource, safEntityServiceProvider, jsonMapper);
+            SafEntityResource<P, ?, ?> entityResource = new SafEntityResource(safEntityClass, safEntitySearch, dataSource, safEntityServiceProvider, jsonMapper);
 
             String kebabSingular = SafEntityResource.camelToKebabLowerCase(safEntityClass.getSimpleName());
             String kebabPlural = Inflector.getInstance().pluralize(kebabSingular);
@@ -157,8 +157,8 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
                                 multiValuedParams.get(name).add(value);
                             }
 
-                            SafEntityResource entityResource2 = getResource(safEntityResourcesByResourceName, resource2);
-                            List<SafEntity> result2 = entityResource2.get(token, resource2, multiValuedParams, dataSource);
+                            SafEntityResource<P, ?, ?> entityResource2 = getResource(safEntityResourcesByResourceName, resource2);
+                            List<? extends SafEntity> result2 = entityResource2.get(token, resource2, multiValuedParams, dataSource);
 
                             result2.stream()
                                     .map(SafEntity::getId)
@@ -170,8 +170,8 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
                     }
                 }
 
-                SafEntityResource entityResource = getResource(safEntityResourcesByResourceName, resource);
-                List result = entityResource.get(token, resource, interpretedQueryParameters, dataSource);
+                SafEntityResource<P, ?, ?> entityResource = getResource(safEntityResourcesByResourceName, resource);
+                List<? extends SafEntity> result = entityResource.get(token, resource, interpretedQueryParameters, dataSource);
 
                 ctx.status(200);
                 ctx.json(result);
@@ -184,8 +184,8 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
                 String resource = ctx.pathParamAsClass("resource", String.class).get();
                 Long id = ctx.pathParamAsClass("id", Long.class).get();
 
-                SafEntityResource entityResource = getResource(safEntityResourcesByResourceName, resource);
-                Object result = entityResource.get(token, resource, dataSource, id);
+                SafEntityResource<P, ?, ?> entityResource = getResource(safEntityResourcesByResourceName, resource);
+                SafEntity result = entityResource.get(token, resource, dataSource, id);
 
                 ctx.status(200);
                 ctx.json(result);
@@ -197,7 +197,7 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
                 String resource = ctx.pathParamAsClass("resource", String.class).get();
                 String requestBody = ctx.body();
 
-                SafEntityResource entityResource = getResource(safEntityResourcesByResourceName, resource);
+                SafEntityResource<P, ?, ?> entityResource = getResource(safEntityResourcesByResourceName, resource);
                 Long insertedId = entityResource.post(token, resource, requestBody);
 
                 // FIXME get absolute path
@@ -215,7 +215,7 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
                 String requestBody = ctx.body();
                 Long id = ctx.pathParamAsClass("id", Long.class).get();
 
-                SafEntityResource entityResource = getResource(safEntityResourcesByResourceName, resource);
+                SafEntityResource<P, ?, ?> entityResource = getResource(safEntityResourcesByResourceName, resource);
                 entityResource.patch(token, resource, id, requestBody);
 
                 ctx.status(204);
@@ -227,7 +227,7 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
                 String resource = ctx.pathParamAsClass("resource", String.class).get();
                 Long id = ctx.pathParamAsClass("id", Long.class).get();
 
-                SafEntityResource entityResource = getResource(safEntityResourcesByResourceName, resource);
+                SafEntityResource<P, ?, ?> entityResource = getResource(safEntityResourcesByResourceName, resource);
                 entityResource.delete(token, resource, id);
 
                 ctx.status(204);
@@ -294,8 +294,8 @@ public class SafRest<P extends ISafEntityServiceProvider> extends SafApp {
 
     }
 
-    private SafEntityResource getResource(Map<String, SafEntityResource> safEntityResourcesByResourceName, String resource) throws SafRestException {
-        SafEntityResource entityResource = safEntityResourcesByResourceName.get(resource);
+    private SafEntityResource<P, ?, ?> getResource(Map<String, SafEntityResource<P, ?, ?>> safEntityResourcesByResourceName, String resource) throws SafRestException {
+        SafEntityResource<P, ?, ?> entityResource = safEntityResourcesByResourceName.get(resource);
 
         if (entityResource == null) {
             throw new SafRestException(404, "resource " + resource + " does not exist");
